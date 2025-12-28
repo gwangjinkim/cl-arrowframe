@@ -56,7 +56,3 @@
 
    ;; test helper
    #:run-tests))
-
-(defpackage #:arrowframe.tests
-  (:use #:cl #:fiveam #:arrowframe)
-  (:export #:run))

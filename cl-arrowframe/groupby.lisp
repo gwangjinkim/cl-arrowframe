@@ -30,8 +30,8 @@ Timestamps are assumed to be integer nanoseconds since epoch.
 " 
   (let* ((c (%kw col))
          (bin (%duration->ns rule)))
-    (key name (lambda (t i)
-                (let ((ts (val t c i)))
+    (key name (lambda (tbl i)
+                (let ((ts (val tbl c i)))
                   (* (floor ts bin) bin))))))
 
 (defstruct grouped
@@ -43,11 +43,11 @@ Timestamps are assumed to be integer nanoseconds since epoch.
     ((typep k 'key-spec) k)
     (t
      (let ((c (%kw k)))
-       (key c (lambda (t i) (val t c i)))))))
+       (key c (lambda (tbl i) (val tbl c i)))))))
 
-(defun group-by (t &rest keys)
+(defun group-by (tbl &rest keys)
   "Return a GROUPED object." 
-  (make-grouped :table t
+  (make-grouped :table tbl
                 :keys (mapcar #'%normalize-key keys)))
 
 ;; Aggregate function placeholders (used only as markers in the summarise macro)
@@ -64,8 +64,8 @@ Timestamps are assumed to be integer nanoseconds since epoch.
   (let ((op (car agg-form)))
     (case op
       (count*
-       (lambda (t idx)
-         (declare (ignore t))
+       (lambda (tbl idx)
+         (declare (ignore tbl))
          (length idx)))
 
       ((sum mean min max first last)
@@ -73,48 +73,48 @@ Timestamps are assumed to be integer nanoseconds since epoch.
               (f (compile-expr-fn expr-form)))
          (ecase op
            (sum
-            (lambda (t idx)
+            (lambda (tbl idx)
               (let ((acc 0))
                 (dotimes (k (length idx) acc)
-                  (incf acc (funcall f t (aref idx k)))))))
+                  (incf acc (funcall f tbl (aref idx k)))))))
 
            (mean
-            (lambda (t idx)
+            (lambda (tbl idx)
               (let ((n (length idx)))
                 (when (= n 0) (return nil))
                 (let ((acc 0))
                   (dotimes (k n)
-                    (incf acc (funcall f t (aref idx k))))
+                    (incf acc (funcall f tbl (aref idx k))))
                   (/ acc n)))))
 
            (min
-            (lambda (t idx)
+            (lambda (tbl idx)
               (let ((n (length idx)))
                 (when (= n 0) (return nil))
-                (let* ((best (funcall f t (aref idx 0))))
+                (let* ((best (funcall f tbl (aref idx 0))))
                   (dotimes (k (length idx) best)
-                    (let ((v (funcall f t (aref idx k))))
+                    (let ((v (funcall f tbl (aref idx k))))
                       (when (< v best) (setf best v))))))))
 
            (max
-            (lambda (t idx)
+            (lambda (tbl idx)
               (let ((n (length idx)))
                 (when (= n 0) (return nil))
-                (let* ((best (funcall f t (aref idx 0))))
+                (let* ((best (funcall f tbl (aref idx 0))))
                   (dotimes (k (length idx) best)
-                    (let ((v (funcall f t (aref idx k))))
+                    (let ((v (funcall f tbl (aref idx k))))
                       (when (> v best) (setf best v))))))))
 
            (first
-            (lambda (t idx)
+            (lambda (tbl idx)
               (if (= (length idx) 0) nil
-                  (funcall f t (aref idx 0)))))
+                  (funcall f tbl (aref idx 0)))))
 
            (last
-            (lambda (t idx)
+            (lambda (tbl idx)
               (let ((n (length idx)))
                 (if (= n 0) nil
-                    (funcall f t (aref idx (1- n))))))))))
+                    (funcall f tbl (aref idx (1- n))))))))))
 
       (t
        (error "Unknown aggregate: ~S" agg-form)))))

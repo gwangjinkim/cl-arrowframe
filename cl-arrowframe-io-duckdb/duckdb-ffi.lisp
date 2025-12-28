@@ -42,6 +42,16 @@
         (error 'duckdb-error
                :message (format nil "Failed to load DuckDB library. Set af.duckdb:*duckdb-library* to the path of your DuckDB shared library. Original error: ~a" e))))))
 
+
+
+(defun duckdb-available-p ()
+  "Return T if the DuckDB shared library can be loaded, otherwise NIL.
+This is intended for tests and optional features."
+  (handler-case
+      (progn (ensure-duckdb-loaded) t)
+    (duckdb-error () nil)
+    (error () nil)))
+
 ;;;; Basic types
 (deftype duckdb_database () '(:pointer))
 (deftype duckdb_connection () '(:pointer))

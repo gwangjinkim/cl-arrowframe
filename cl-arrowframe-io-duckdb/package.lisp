@@ -4,6 +4,7 @@
   (:export
    #:*duckdb-library*
    #:ensure-duckdb-loaded
+   #:duckdb-available-p
    #:with-duckdb
    ;; backend key
    #:%duckdb

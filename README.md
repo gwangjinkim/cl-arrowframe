@@ -57,3 +57,16 @@ If the shared library isn't found automatically:
   - `:cl-arrowframe-io-duckdb`
   - `:cl-arrowframe-io-duckdb/tests` (planned)
 
+## Running tests
+
+```lisp
+;; Core tests
+(ql:quickload :cl-arrowframe/tests)
+(arrowframe.tests:run)
+;; or
+(af:run-tests)
+
+;; DuckDB IO backend tests (skips automatically if DuckDB library is not available)
+(ql:quickload :cl-arrowframe-io-duckdb/tests)
+(arrowframe.io.duckdb.tests:run)
+```

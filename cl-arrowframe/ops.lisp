@@ -1,37 +1,37 @@
 (in-package #:arrowframe)
 
-(defun select (t &rest cols)
+(defun select (tbl &rest cols)
   "Return a new table with only COLS." 
   (let ((h (make-hash-table :test 'eq)))
     (dolist (c cols)
       (let ((k (%kw c)))
-        (setf (gethash k h) (col t k))))
+        (setf (gethash k h) (col tbl k))))
     (%make-table :columns h
-                 :schema (remove-if-not (lambda (p) (gethash (car p) h)) (schema t))
-                 :nrows (nrows t))))
+                 :schema (remove-if-not (lambda (p) (gethash (car p) h)) (schema tbl))
+                 :nrows (nrows tbl))))
 
-(defun filter (t predicate)
+(defun filter (tbl predicate)
   "Filter rows using PREDICATE (table i) -> boolean." 
   (%ensure (functionp predicate) "PREDICATE must be a function")
-  (let* ((n (nrows t))
+  (let* ((n (nrows tbl))
          (keep (make-array n :adjustable t :fill-pointer 0)))
     (dotimes (i n)
-      (when (funcall predicate t i)
+      (when (funcall predicate tbl i)
         (vector-push-extend i keep)))
     (let ((h (make-hash-table :test 'eq)))
       (maphash (lambda (k v)
                  (setf (gethash k h) (%take-indices v keep)))
-               (columns t))
-      (%make-table :columns h :schema (copy-list (schema t)) :nrows (length keep)))))
+               (columns tbl))
+      (%make-table :columns h :schema (copy-list (schema tbl)) :nrows (length keep)))))
 
-(defmacro with (t &rest bindings)
+(defmacro with (tbl &rest bindings)
   "Add or replace columns.
 
 BINDINGS are like (:new-col <expr>) where <expr> can use keyword column references.
 "
   (let ((g (gensym "T"))
         (i (gensym "I")))
-    `(let* ((,g (copy-table ,t))
+    `(let* ((,g (copy-table ,tbl))
             (n (nrows ,g)))
        ,@(mapcar
           (lambda (b)
@@ -54,5 +54,5 @@ BINDINGS are like (:new-col <expr>) where <expr> can use keyword column referenc
 (defun asc (col) (make-order-spec :col (%kw col) :direction :asc))
 (defun desc (col) (make-order-spec :col (%kw col) :direction :desc))
 
-(defun arrange (t &rest orders)
-  (sort-table t orders))
+(defun arrange (tbl &rest orders)
+  (sort-table tbl orders))
