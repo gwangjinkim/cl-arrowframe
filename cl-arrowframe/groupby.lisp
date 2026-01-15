@@ -50,81 +50,117 @@ Timestamps are assumed to be integer nanoseconds since epoch.
   (make-grouped :table tbl
                 :keys (mapcar #'%normalize-key keys)))
 
-;; Aggregate function placeholders (used only as markers in the summarise macro)
-(defun count* () (error "COUNT* is only valid inside SUMMARISE"))
-(defun sum (&rest _) (declare (ignore _)) (error "SUM is only valid inside SUMMARISE"))
-(defun mean (&rest _) (declare (ignore _)) (error "MEAN is only valid inside SUMMARISE"))
-(defun min (&rest _) (declare (ignore _)) (error "MIN is only valid inside SUMMARISE"))
-(defun max (&rest _) (declare (ignore _)) (error "MAX is only valid inside SUMMARISE"))
-(defun first (&rest _) (declare (ignore _)) (error "FIRST is only valid inside SUMMARISE"))
-(defun last (&rest _) (declare (ignore _)) (error "LAST is only valid inside SUMMARISE"))
+;; Aggregate marker functions (they are intended to be USED AS FORMS inside SUMMARISE).
+;; They are never meant to be called directly at runtime.
+(defun agg-count (&rest _) (declare (ignore _)) (error "AGG-COUNT is only valid inside SUMMARISE"))
+(defun agg-sum   (&rest _) (declare (ignore _)) (error "AGG-SUM is only valid inside SUMMARISE"))
+(defun agg-mean  (&rest _) (declare (ignore _)) (error "AGG-MEAN is only valid inside SUMMARISE"))
+(defun agg-min   (&rest _) (declare (ignore _)) (error "AGG-MIN is only valid inside SUMMARISE"))
+(defun agg-max   (&rest _) (declare (ignore _)) (error "AGG-MAX is only valid inside SUMMARISE"))
+(defun agg-first (&rest _) (declare (ignore _)) (error "AGG-FIRST is only valid inside SUMMARISE"))
+(defun agg-last  (&rest _) (declare (ignore _)) (error "AGG-LAST is only valid inside SUMMARISE"))
+
+;; Backwards-compatible aliases (kept for convenience; prefer AGG-* names).
+(defun count* (&rest _) (declare (ignore _)) (error "COUNT* is only valid inside SUMMARISE (prefer AGG-COUNT)"))
+(defun sum    (&rest _) (declare (ignore _)) (error "SUM is only valid inside SUMMARISE (prefer AGG-SUM)"))
+(defun mean   (&rest _) (declare (ignore _)) (error "MEAN is only valid inside SUMMARISE (prefer AGG-MEAN)"))
+
+(defun %agg-op->kw (sym)
+  (intern (string-upcase (symbol-name sym)) :keyword))
 
 (defun %agg-fn (agg-form)
-  "Return a function (lambda (table indices-vector) value) for an aggregate form." 
-  (let ((op (car agg-form)))
-    (case op
-      (count*
+  "Return a function (lambda (table indices-vector) value) for an aggregate form.
+
+Recommended aggregate operators:
+  (agg-count)
+  (agg-sum <expr>)
+  (agg-mean <expr>)
+  (agg-min <expr>)
+  (agg-max <expr>)
+  (agg-first <expr>)
+  (agg-last <expr>)
+
+For backwards compatibility, SUMMARISE also accepts COUNT*, SUM, MEAN and even
+MIN/MAX/FIRST/LAST *by name* (without defining those symbols in ARROWFRAME)."
+  (let* ((op (car agg-form))
+         (opk (%agg-op->kw op)))
+    (case opk
+      ((:AGG-COUNT :COUNT*)
        (lambda (tbl idx)
          (declare (ignore tbl))
          (length idx)))
 
-      ((sum mean min max first last)
-       (let* ((expr-form (cadr agg-form))
-              (f (compile-expr-fn expr-form)))
-         (ecase op
-           (sum
-            (lambda (tbl idx)
-              (let ((acc 0))
-                (dotimes (k (length idx) acc)
-                  (incf acc (funcall f tbl (aref idx k)))))))
-
-           (mean
-            (lambda (tbl idx)
-              (let ((n (length idx)))
-                (when (= n 0) (return nil))
+      ((:AGG-SUM :SUM
+        :AGG-MEAN :MEAN
+        :AGG-MIN :MIN
+        :AGG-MAX :MAX
+        :AGG-FIRST :FIRST
+        :AGG-LAST :LAST)
+       (let ((expr-form (cadr agg-form)))
+         (%ensure expr-form "Aggregate ~S requires an expression, e.g. (~S :x)" op op)
+         (let ((f (compile-expr-fn expr-form)))
+           (ecase opk
+             ((:AGG-SUM :SUM)
+              (lambda (tbl idx)
                 (let ((acc 0))
-                  (dotimes (k n)
-                    (incf acc (funcall f tbl (aref idx k))))
-                  (/ acc n)))))
+                  (dotimes (k (length idx) acc)
+                    (incf acc (funcall f tbl (aref idx k)))))))
 
-           (min
-            (lambda (tbl idx)
-              (let ((n (length idx)))
-                (when (= n 0) (return nil))
-                (let* ((best (funcall f tbl (aref idx 0))))
-                  (dotimes (k (length idx) best)
-                    (let ((v (funcall f tbl (aref idx k))))
-                      (when (< v best) (setf best v))))))))
+             ((:AGG-MEAN :MEAN)
+              (lambda (tbl idx)
+                (let ((n (length idx)))
+                  (if (= n 0)
+                      nil
+                      (let ((acc 0))
+                        (dotimes (k n)
+                          (incf acc (funcall f tbl (aref idx k))))
+                        (/ acc n))))))
 
-           (max
-            (lambda (tbl idx)
-              (let ((n (length idx)))
-                (when (= n 0) (return nil))
-                (let* ((best (funcall f tbl (aref idx 0))))
-                  (dotimes (k (length idx) best)
-                    (let ((v (funcall f tbl (aref idx k))))
-                      (when (> v best) (setf best v))))))))
+             ((:AGG-MIN :MIN)
+              (lambda (tbl idx)
+                (let ((n (length idx)))
+                  (if (= n 0)
+                      nil
+                      (let ((best (funcall f tbl (aref idx 0))))
+                        (loop for j from 1 below n
+                              for v = (funcall f tbl (aref idx j))
+                              do (when (< v best) (setf best v)))
+                        best)))))
 
-           (first
-            (lambda (tbl idx)
-              (if (= (length idx) 0) nil
-                  (funcall f tbl (aref idx 0)))))
+             ((:AGG-MAX :MAX)
+              (lambda (tbl idx)
+                (let ((n (length idx)))
+                  (if (= n 0)
+                      nil
+                      (let ((best (funcall f tbl (aref idx 0))))
+                        (loop for j from 1 below n
+                              for v = (funcall f tbl (aref idx j))
+                              do (when (> v best) (setf best v)))
+                        best)))))
 
-           (last
-            (lambda (tbl idx)
-              (let ((n (length idx)))
-                (if (= n 0) nil
-                    (funcall f tbl (aref idx (1- n))))))))))
+             ((:AGG-FIRST :FIRST)
+              (lambda (tbl idx)
+                (if (= (length idx) 0)
+                    nil
+                    (funcall f tbl (aref idx 0)))))
+
+             ((:AGG-LAST :LAST)
+              (lambda (tbl idx)
+                (let ((n (length idx)))
+                  (if (= n 0)
+                      nil
+                      (funcall f tbl (aref idx (1- n)))))))))))
 
       (t
        (error "Unknown aggregate: ~S" agg-form)))))
+
 
 
 (defmacro summarise (grouped &rest outputs)
   "Summarise a grouped table.
 
 Usage:
-  (summarise (group-by t :a) (:n (count*)) (:s (sum :x)))
+  (summarise (group-by tbl :a) (:n (agg-count)) (:s (agg-sum :x)))
 
 If GROUPED is a plain table, it will be treated as a single group.
 " 

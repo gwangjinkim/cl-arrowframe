@@ -1,6 +1,6 @@
 (asdf:defsystem #:cl-arrowframe
   :description "Columnar DataFrame core for CL Data Lab (MVP)"
-  :author "CL Data Lab"
+  :author "Gwang-Jin Kim <gwang.jin.kim.phd@gmail.com>"
   :license "MIT"
   :serial t
   :depends-on ()
